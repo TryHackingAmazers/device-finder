@@ -4,7 +4,7 @@ import numpy as np
 
 from PIL import Image
 import cv2
-from yolov_model import load
+from recommendation.yolov_model import load
 
 from rembg import remove
 
@@ -13,43 +13,38 @@ def remove_bg(image):
 
 
 
-def parse_image(image_path, item):
+def parse_image(image_path, id):
     yolov_model = load()
 
     result = yolov_model(image_path,verbose =False)
     objects = result[0].boxes.data.cpu().numpy()
     labels = result[0].names
 
-    detected_objects = ()
-    for i in range(len(objects)):
-        x1, y1, x2, y2, p, it = objects[i]
-        label = labels[it]
-        if(label == item):
-            detected_objects=(label, (x1, y1, x2, y2))
+    x1, y1, x2, y2, p, it = objects[id]
+    label = labels[it]
+    detected_objects=(label, (x1, y1, x2, y2))
 
     # Load the image using PIL
     image = Image.open(image_path)
 
-    # Crop the image to the bounding box
-    if detected_objects:
-        _, (x1, y1, x2, y2) = detected_objects
-        cropped_image = image.crop((x1, y1, x2, y2))
-        # cropped_image = remove_bg(cropped_image)
-        cropped_image.save('cropped.png')
+    _, (x1, y1, x2, y2) = detected_objects
+    cropped_image = image.crop((x1, y1, x2, y2))
+    return cropped_image,label
 
-    print(detected_objects)
-    return detected_objects
-
-def compare(item:str, image_path:str):
-    files = os.listdir('/home/rohan/hackonama/datasets/amazon/rmbg_'+item)
+def compare(image_path:str,id:int):
+    cropped_image, item = parse_image(image_path,id)
+    files = os.listdir('./datasets/amazon/'+item.lower()+"_rmbg")
 
     sift = cv2.SIFT_create()
 
-    img_desc = sift.detectAndCompute(cv2.imread(image_path), None)[1]
+    cropped_image = np.array(cropped_image)
+    cropped_image = cv2.cvtColor(cropped_image, cv2.COLOR_RGB2GRAY)
+
+    img_desc = sift.detectAndCompute(cropped_image, None)[1]
 
     desc = []
     for file in files:
-        image = cv2.imread('/home/rohan/hackonama/datasets/amazon/rmbg_'+item+'/'+file)
+        image = cv2.imread('./datasets/amazon/'+item.lower()+"_rmbg"+'/'+file)
         desc.append(sift.detectAndCompute(image, None)[1])
 
     bf = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
@@ -63,10 +58,6 @@ def compare(item:str, image_path:str):
             matches.append(np.sum(mask))  # The number of inlier matches
         else:
             matches.append(0)
-    print(matches)
     matches = np.array(matches)
     order = np.argsort(matches)[::-1]
-    print([files[i] for i in order[:5]])
-    
-    
-
+    return (['amazon/'+item.lower()+'/'+files[i][:-3]+"jpg" for i in order[:]])
